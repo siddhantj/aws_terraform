@@ -164,3 +164,81 @@ data "aws_lambda_invocation" "FistRevision" {
     }
   )
 }
+
+# Create SNS topic resource
+resource "aws_sns_topic" "adx_sns_topic" {
+  name = "adx_sns_topic"
+  # display_name = "adx_sns_topic"
+}
+
+# Create policy for SNS topic
+resource "aws_sns_topic_policy" "adx_sns_topic_policy" {
+  arn    = aws_sns_topic.adx_sns_topic.arn
+  policy = data.aws_iam_policy_document.sns_topic_policy.json
+
+}
+
+data "aws_iam_policy_document" "sns_topic_policy" {
+  policy_id = "__default_policy_ID"
+
+  statement {
+    actions = [
+      "SNS:Subscribe",
+      "SNS:SetTopicAttributes",
+      "SNS:RemovePermission",
+      "SNS:Receive",
+      "SNS:Publish",
+      "SNS:ListSubscriptionsByTopic",
+      "SNS:GetTopicAttributes",
+      "SNS:DeleteTopic",
+      "SNS:AddPermission",
+    ]
+    effect = "Allow"
+    resources = [
+      aws_sns_topic.adx_sns_topic.arn,
+    ]
+  }
+}
+
+# Create SQS Queue "adx_sns_topic"
+resource "aws_sqs_queue" "adx_sqs_queue" {
+  name                        = "adx_sqs_queue"
+  fifo_queue                  = false
+  content_based_deduplication = false
+  max_message_size            = 2048
+}
+
+
+# Create policy "adx_sqs_queue_policy" and attach it to "adx_sqs_queue"
+resource "aws_sqs_queue_policy" "adx_sqs_queue_policy" {
+  queue_url = aws_sqs_queue.adx_sqs_queue.id
+  policy    = <<POLICY
+{
+  "Version": "2012-10-17",
+  "Id": "sqspolicy",
+  "Statement": [
+    {
+      "Sid": "First",
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": "sqs:SendMessage",
+      "Resource": "${aws_sqs_queue.adx_sqs_queue.arn}",
+      "Condition": {
+        "ArnEquals": {
+          "aws:SourceArn": "${aws_sns_topic.adx_sns_topic.arn}"
+        }
+      }
+    }
+  ]
+}
+POLICY
+}
+
+# Subscribe to topic "adx_sns_topic" by "adx_sqs_queue"
+resource "aws_sns_topic_subscription" "adx_sns_topic_subscribed_by_adx_sqs_queue" {
+  topic_arn = aws_sns_topic.adx_sns_topic.arn
+  protocol  = "sqs"
+  endpoint  = aws_sqs_queue.adx_sqs_queue.arn
+}
+
+
