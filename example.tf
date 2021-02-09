@@ -55,11 +55,11 @@ resource "aws_cloudwatch_event_rule" "NewRevisionEventRule" {
 }
 
 # Create trigger for EventBRidge rule to Lambda function .This is triggering target
-resource "aws_cloudwatch_event_target" "TargetGetNewRevision" { ## comment this out to see if you see any trigget in cloudwatch. I'm unable to see target_id of this trigger in cloudwatch or lambda
-  rule      = aws_cloudwatch_event_rule.NewRevisionEventRule.name
-  target_id = "TargetGetNewRevision"
-  arn       = aws_lambda_function.FunctionGetNewRevision.arn
-}
+# resource "aws_cloudwatch_event_target" "TargetGetNewRevision" { ## comment this out to see if you see any trigget in cloudwatch. I'm unable to see target_id of this trigger in cloudwatch or lambda
+#   rule      = aws_cloudwatch_event_rule.NewRevisionEventRule.name
+#   target_id = "TargetGetNewRevision"
+#   arn       = aws_lambda_function.FunctionGetNewRevision.arn
+# }
 
 # Create Lambda function using Python code included in lambda_code.zip
 resource "aws_lambda_function" "FunctionGetNewRevision" {
@@ -180,23 +180,19 @@ resource "aws_sns_topic_policy" "adx_sns_topic_policy" {
 
 data "aws_iam_policy_document" "sns_topic_policy" {
   policy_id = "__default_policy_ID"
-
   statement {
     actions = [
-      "SNS:Subscribe",
-      "SNS:SetTopicAttributes",
-      "SNS:RemovePermission",
-      "SNS:Receive",
-      "SNS:Publish",
-      "SNS:ListSubscriptionsByTopic",
-      "SNS:GetTopicAttributes",
-      "SNS:DeleteTopic",
-      "SNS:AddPermission",
+      "sns:Publish"
     ]
+    principals {
+      type        = "Service"
+      identifiers = ["events.amazonaws.com"]
+    }
     effect = "Allow"
     resources = [
       aws_sns_topic.adx_sns_topic.arn,
     ]
+    sid = "__default_statement_ID"
   }
 }
 
@@ -241,4 +237,24 @@ resource "aws_sns_topic_subscription" "adx_sns_topic_subscribed_by_adx_sqs_queue
   endpoint  = aws_sqs_queue.adx_sqs_queue.arn
 }
 
+# Create trigger for EventBRidge rule to Lambda function .This is triggering target
+resource "aws_cloudwatch_event_target" "TargetGetNewRevision" {
+  rule      = aws_cloudwatch_event_rule.NewRevisionEventRule.name
+  target_id = "TargetGetNewRevision"
+  arn       = aws_sns_topic.adx_sns_topic.arn
+}
+
+data "aws_caller_identity" "current" {}
+
+output "account_id" {
+  value = data.aws_caller_identity.current.account_id
+}
+
+output "caller_arn" {
+  value = data.aws_caller_identity.current.arn
+}
+
+output "caller_user" {
+  value = data.aws_caller_identity.current.user_id
+}
 
