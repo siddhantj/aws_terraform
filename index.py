@@ -26,12 +26,20 @@ def handler(event, context):
         service_name='sqs',
         region_name=region
     )
-    message = sqs.receive_message(
-        QueueUrl='https://sqs.us-east-1.amazonaws.com/635065826439/adx_sqs_queue'
-    )
-    print("##### Event -- START")
-    print(message)
-    print("##### Event -- END")
+    # message = sqs.receive_message(
+    #     QueueUrl='https://sqs.us-east-1.amazonaws.com/635065826439/adx_sqs_queue'
+    # )
+    for record in event['Records']:
+            body = json.loads(record["body"])
+            message = json.loads(body['Message'])
+            print('Message: {}'.format(message))
+            print("DatasetID: {}".format(message['resources']))
+            print('Revisions: {}'.format(message['detail']['RevisionIds']))
+            
+            # print (body)
+    # print("##### Event -- START")
+    # print(message)
+    # print("##### Event -- END")
     return {
         'statusCode': 200,
         'body': json.dumps('All jobs completed.')
