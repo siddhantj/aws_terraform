@@ -13,7 +13,7 @@ terraform {
 
 # Configure AWS Provider account & target region
 provider "aws" {
-  profile = "jawasi-myiam"
+  profile = "default"
   region  = "us-east-1"
 }
 
@@ -61,11 +61,11 @@ resource "aws_cloudwatch_event_rule" "NewRevisionEventRule" {
 #   arn       = aws_lambda_function.FunctionGetNewRevision.arn
 # }
 
-# Create Lambda function using Python code included in lambda_code.zip
+# Create Lambda function using Python code included in index.zip
 resource "aws_lambda_function" "FunctionGetNewRevision" {
   function_name    = "FunctionGetNewRevision"
-  filename         = "lambda_code.zip"
-  source_code_hash = filebase64sha256("lambda_code.zip")
+  filename         = "index.zip"
+  source_code_hash = filebase64sha256("index.zip")
   handler          = "index.handler"
   environment {
     variables = {
@@ -75,6 +75,11 @@ resource "aws_lambda_function" "FunctionGetNewRevision" {
   role    = aws_iam_role.RoleGetNewRevision.arn
   runtime = "python3.7"
   timeout = 180
+}
+
+resource "aws_iam_role_policy_attachment" "RoleGetNewRevisionAttachment" {
+  role = aws_iam_role.RoleGetNewRevision.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
 # Provide permission for EventBridge to invoke Lambda function
@@ -133,6 +138,11 @@ resource "aws_iam_role_policy" "RoleGetNewRevisionPolicy" {
         }
       },
       {
+        Effect   = "Allow",
+        Action   = "sqs:*",
+        Resource = "*"
+      },
+      {
         Effect = "Allow",
         Action = "s3:PutObject",
         Resource = [
@@ -151,7 +161,7 @@ resource "aws_iam_role_policy" "RoleGetNewRevisionPolicy" {
 # }
 
 
-
+/*
 # Invoke Lambda function for initial data export
 data "aws_lambda_invocation" "FistRevision" {
   function_name = aws_lambda_function.FunctionGetNewRevision.function_name
@@ -164,7 +174,7 @@ data "aws_lambda_invocation" "FistRevision" {
     }
   )
 }
-
+*/
 # Create SNS topic resource
 resource "aws_sns_topic" "adx_sns_topic" {
   name = "adx_sns_topic"
@@ -202,6 +212,7 @@ resource "aws_sqs_queue" "adx_sqs_queue" {
   fifo_queue                  = false
   content_based_deduplication = false
   max_message_size            = 2048
+  visibility_timeout_seconds  = 600
 }
 
 
@@ -217,13 +228,8 @@ resource "aws_sqs_queue_policy" "adx_sqs_queue_policy" {
       "Sid": "First",
       "Effect": "Allow",
       "Principal": "*",
-      "Action": "sqs:SendMessage",
-      "Resource": "${aws_sqs_queue.adx_sqs_queue.arn}",
-      "Condition": {
-        "ArnEquals": {
-          "aws:SourceArn": "${aws_sns_topic.adx_sns_topic.arn}"
-        }
-      }
+      "Action": "sqs:*",
+      "Resource": "${aws_sqs_queue.adx_sqs_queue.arn}"
     }
   ]
 }
@@ -242,6 +248,12 @@ resource "aws_cloudwatch_event_target" "TargetGetNewRevision" {
   rule      = aws_cloudwatch_event_rule.NewRevisionEventRule.name
   target_id = "TargetGetNewRevision"
   arn       = aws_sns_topic.adx_sns_topic.arn
+}
+
+# Setup SQS Queue Trigger for S3 Export Lambda
+resource "aws_lambda_event_source_mapping" "s3ExportLambdaTrigger" {
+  event_source_arn = aws_sqs_queue.adx_sqs_queue.arn
+  function_name    = aws_lambda_function.FunctionGetNewRevision.function_name
 }
 
 data "aws_caller_identity" "current" {}
