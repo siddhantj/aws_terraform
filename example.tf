@@ -42,6 +42,12 @@ resource "aws_s3_bucket_public_access_block" "DataS3BucketPublicAccessBlock" {
   restrict_public_buckets = true
 }
 
+resource "aws_s3_bucket_object" "adx_s3_folder" {
+  bucket       = aws_s3_bucket.DataS3Bucket.id
+  key          = "adx_s3_folder/"
+  content_type = "application/x-directory"
+}
+
 
 # Create new EventBridge rule to trigger on the Revision Published To Data Set event .This is invocation
 resource "aws_cloudwatch_event_rule" "NewRevisionEventRule" {
