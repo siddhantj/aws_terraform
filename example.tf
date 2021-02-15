@@ -78,7 +78,7 @@ resource "aws_lambda_function" "FunctionGetNewRevision" {
 }
 
 resource "aws_iam_role_policy_attachment" "RoleGetNewRevisionAttachment" {
-  role = aws_iam_role.RoleGetNewRevision.name
+  role       = aws_iam_role.RoleGetNewRevision.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
@@ -210,7 +210,7 @@ data "aws_iam_policy_document" "sns_topic_policy" {
 resource "aws_sqs_queue" "adx_sqs_queue" {
   name                        = "adx_sqs_queue"
   fifo_queue                  = false
-  content_based_deduplication = false
+  content_based_deduplication = false # will be true for FIFO
   max_message_size            = 2048
   visibility_timeout_seconds  = 600
 }
@@ -236,14 +236,14 @@ resource "aws_sqs_queue_policy" "adx_sqs_queue_policy" {
 POLICY
 }
 
-# Subscribe to topic "adx_sns_topic" by "adx_sqs_queue"
+# Subscribe "adx_sqs_queue" to topic "adx_sns_topic"
 resource "aws_sns_topic_subscription" "adx_sns_topic_subscribed_by_adx_sqs_queue" {
   topic_arn = aws_sns_topic.adx_sns_topic.arn
   protocol  = "sqs"
   endpoint  = aws_sqs_queue.adx_sqs_queue.arn
 }
 
-# Create trigger for EventBRidge rule to Lambda function .This is triggering target
+# Create trigger for EventBridge/Cloudwatch rule to SNS topic adx_sns_topic .This is triggering target
 resource "aws_cloudwatch_event_target" "TargetGetNewRevision" {
   rule      = aws_cloudwatch_event_rule.NewRevisionEventRule.name
   target_id = "TargetGetNewRevision"
@@ -256,7 +256,9 @@ resource "aws_lambda_event_source_mapping" "s3ExportLambdaTrigger" {
   function_name    = aws_lambda_function.FunctionGetNewRevision.function_name
 }
 
-data "aws_caller_identity" "current" {}
+data "aws_caller_identity" "current" {
+
+}
 
 output "account_id" {
   value = data.aws_caller_identity.current.account_id
@@ -270,3 +272,52 @@ output "caller_user" {
   value = data.aws_caller_identity.current.user_id
 }
 
+
+# Create SNS topic for AS consumption
+resource "aws_sns_topic" "adx-s3export-new-revision-event-topic" {
+  name = "adx-s3export-new-revision-event-topic"
+
+}
+
+# Attach policy 'adx-s3export-new-revision-event-topic-policy' to SNS topic 'adx-s3export-new-revision-event-topic'
+resource "aws_sns_topic_policy" "adx-s3export-new-revision-event-topic-policy" {
+  arn    = aws_sns_topic.adx-s3export-new-revision-event-topic.arn
+  policy = data.aws_iam_policy_document.sns_topic_policy.json
+
+}
+
+# Create SQS Queue 'adx-s3export-new-revision-event-queue'
+resource "aws_sqs_queue" "adx-s3export-new-revision-event-queue" {
+  name                        = "adx-s3export-new-revision-event-queue"
+  fifo_queue                  = false
+  content_based_deduplication = false # will be true for FIFO
+  max_message_size            = 2048
+  visibility_timeout_seconds  = 600
+}
+
+# Create policy "adx-s3export-new-revision-event-queue-policy" and attach it to "adx-s3export-new-revision-event-queue"
+resource "aws_sqs_queue_policy" "adx-s3export-new-revision-event-queue-policy" {
+  queue_url = aws_sqs_queue.adx_sqs_queue.id
+  policy    = <<POLICY
+{
+  "Version": "2012-10-17",
+  "Id": "sqspolicy",
+  "Statement": [
+    {
+      "Sid": "First",
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": "sqs:*",
+      "Resource": "${aws_sqs_queue.adx-s3export-new-revision-event-queue.arn}"
+    }
+  ]
+}
+POLICY
+}
+
+# Subscribe "adx-s3export-new-revision-event-queue" to topic "adx-s3export-new-revision-event-topic"
+resource "aws_sns_topic_subscription" "adx-s3export-new-revision-event-queue-subscribed-to-adx-s3export-new-revision-event-topic" {
+  topic_arn = aws_sns_topic.adx-s3export-new-revision-event-topic.arn
+  protocol  = "sqs"
+  endpoint  = aws_sqs_queue.adx-s3export-new-revision-event-queue.arn
+}
