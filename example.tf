@@ -181,42 +181,12 @@ data "aws_lambda_invocation" "FistRevision" {
   )
 }
 */
-# Create SNS topic resource
-resource "aws_sns_topic" "adx_sns_topic" {
-  name = "adx_sns_topic"
-  # display_name = "adx_sns_topic"
-}
 
-# Create policy for SNS topic
-resource "aws_sns_topic_policy" "adx_sns_topic_policy" {
-  arn    = aws_sns_topic.adx_sns_topic.arn
-  policy = data.aws_iam_policy_document.sns_topic_policy.json
-
-}
-
-data "aws_iam_policy_document" "sns_topic_policy" {
-  policy_id = "__default_policy_ID"
-  statement {
-    actions = [
-      "sns:Publish"
-    ]
-    principals {
-      type        = "Service"
-      identifiers = ["events.amazonaws.com"]
-    }
-    effect = "Allow"
-    resources = [
-      aws_sns_topic.adx_sns_topic.arn,
-    ]
-    sid = "__default_statement_ID"
-  }
-}
-
-# Create SQS Queue "adx_sns_topic"
+# Create SQS Queue "adx_sqs_queue"
 resource "aws_sqs_queue" "adx_sqs_queue" {
-  name                        = "adx_sqs_queue"
-  fifo_queue                  = false
-  content_based_deduplication = false # will be true for FIFO
+  name                        = "adx_sqs_queue.fifo"
+  fifo_queue                  = true
+  content_based_deduplication = true
   max_message_size            = 2048
   visibility_timeout_seconds  = 600
 }
@@ -242,9 +212,9 @@ resource "aws_sqs_queue_policy" "adx_sqs_queue_policy" {
 POLICY
 }
 
-# Subscribe "adx_sqs_queue" to topic "adx_sns_topic"
+# Subscribe "adx_sqs_queue" to topic "MyTestADXTopic.fifo"
 resource "aws_sns_topic_subscription" "adx_sns_topic_subscribed_by_adx_sqs_queue" {
-  topic_arn = aws_sns_topic.adx_sns_topic.arn
+  topic_arn = "arn:aws:sns:us-east-1:304289345267:MyTestADXTopic.fifo"
   protocol  = "sqs"
   endpoint  = aws_sqs_queue.adx_sqs_queue.arn
 }
@@ -253,7 +223,7 @@ resource "aws_sns_topic_subscription" "adx_sns_topic_subscribed_by_adx_sqs_queue
 resource "aws_cloudwatch_event_target" "TargetGetNewRevision" {
   rule      = aws_cloudwatch_event_rule.NewRevisionEventRule.name
   target_id = "TargetGetNewRevision"
-  arn       = aws_sns_topic.adx_sns_topic.arn
+  arn       = "arn:aws:sns:us-east-1:304289345267:MyTestADXTopic.fifo"
 }
 
 # Setup SQS Queue Trigger for S3 Export Lambda
@@ -279,24 +249,11 @@ output "caller_user" {
 }
 
 
-# Create SNS topic for AS consumption
-resource "aws_sns_topic" "adx-s3export-new-revision-event-topic" {
-  name = "adx-s3export-new-revision-event-topic"
-
-}
-
-# Attach policy 'adx-s3export-new-revision-event-topic-policy' to SNS topic 'adx-s3export-new-revision-event-topic'
-resource "aws_sns_topic_policy" "adx-s3export-new-revision-event-topic-policy" {
-  arn    = aws_sns_topic.adx-s3export-new-revision-event-topic.arn
-  policy = data.aws_iam_policy_document.sns_topic_policy.json
-
-}
-
 # Create SQS Queue 'adx-s3export-new-revision-event-queue'
 resource "aws_sqs_queue" "adx-s3export-new-revision-event-queue" {
-  name                        = "adx-s3export-new-revision-event-queue"
-  fifo_queue                  = false
-  content_based_deduplication = false # will be true for FIFO
+  name                        = "adx-s3export-new-revision-event-queue.fifo"
+  fifo_queue                  = true
+  content_based_deduplication = true
   max_message_size            = 2048
   visibility_timeout_seconds  = 600
 }
@@ -321,9 +278,9 @@ resource "aws_sqs_queue_policy" "adx-s3export-new-revision-event-queue-policy" {
 POLICY
 }
 
-# Subscribe "adx-s3export-new-revision-event-queue" to topic "adx-s3export-new-revision-event-topic"
+# Subscribe "adx-s3export-new-revision-event-queue" to topic "AdxASTopic.fifo"
 resource "aws_sns_topic_subscription" "adx-s3export-new-revision-event-queue-subscribed-to-adx-s3export-new-revision-event-topic" {
-  topic_arn = aws_sns_topic.adx-s3export-new-revision-event-topic.arn
+  topic_arn = "arn:aws:sns:us-east-1:304289345267:AdxASTopic.fifo"
   protocol  = "sqs"
   endpoint  = aws_sqs_queue.adx-s3export-new-revision-event-queue.arn
 }
