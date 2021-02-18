@@ -42,11 +42,11 @@ resource "aws_s3_bucket_public_access_block" "DataS3BucketPublicAccessBlock" {
   restrict_public_buckets = true
 }
 
-resource "aws_s3_bucket_object" "adx_s3_folder" {
-  bucket       = aws_s3_bucket.DataS3Bucket.id
-  key          = "adx_s3_folder/"
-  content_type = "application/x-directory"
-}
+# resource "aws_s3_bucket_object" "adx_s3_folder" {
+#   bucket       = aws_s3_bucket.DataS3Bucket.id
+#   key          = "adx_s3_folder/"
+#   content_type = "application/x-directory"
+# }
 
 
 # Create new EventBridge rule to trigger on the Revision Published To Data Set event .This is invocation
@@ -142,6 +142,11 @@ resource "aws_iam_role_policy" "RoleGetNewRevisionPolicy" {
             ]
           }
         }
+      },
+      {
+        Effect   = "Allow",
+        Action   = "sns:*",
+        Resource = "*"
       },
       {
         Effect   = "Allow",
@@ -288,8 +293,26 @@ resource "aws_sns_topic" "adx-s3export-new-revision-event-topic" {
 # Attach policy 'adx-s3export-new-revision-event-topic-policy' to SNS topic 'adx-s3export-new-revision-event-topic'
 resource "aws_sns_topic_policy" "adx-s3export-new-revision-event-topic-policy" {
   arn    = aws_sns_topic.adx-s3export-new-revision-event-topic.arn
-  policy = data.aws_iam_policy_document.sns_topic_policy.json
+  policy = data.aws_iam_policy_document.sns_s3export_topic_policy.json
 
+}
+
+data "aws_iam_policy_document" "sns_s3export_topic_policy" {
+  policy_id = "__default_policy_ID"
+  statement {
+    actions = [
+      "sns:Publish"
+    ]
+    principals {
+      type        = "Service"
+      identifiers = ["lambda.amazonaws.com"]
+    }
+    effect = "Allow"
+    resources = [
+      aws_sns_topic.adx-s3export-new-revision-event-topic.arn,
+    ]
+    sid = "__default_statement_ID"
+  }
 }
 
 # Create SQS Queue 'adx-s3export-new-revision-event-queue'
@@ -303,7 +326,7 @@ resource "aws_sqs_queue" "adx-s3export-new-revision-event-queue" {
 
 # Create policy "adx-s3export-new-revision-event-queue-policy" and attach it to "adx-s3export-new-revision-event-queue"
 resource "aws_sqs_queue_policy" "adx-s3export-new-revision-event-queue-policy" {
-  queue_url = aws_sqs_queue.adx_sqs_queue.id
+  queue_url = aws_sqs_queue.adx-s3export-new-revision-event-queue.id
   policy    = <<POLICY
 {
   "Version": "2012-10-17",

@@ -9,6 +9,14 @@ import json
 
 region = os.environ['AWS_REGION']
 destination_bucket = os.environ['S3_BUCKET']
+topic_arn='arn:aws:sns:us-east-1:304289345267:adx-s3export-new-revision-event-topic'
+
+def create_message(dataset_id, revision_id):
+    message = {
+        'dataset_id' : dataset_id,
+        'revision_id': revision_id
+    }
+    return json.dumps(message)
 
 # Grouper recipe from standard docs: https://docs.python.org/3/library/itertools.html
 def grouper(iterable, n):
@@ -32,6 +40,10 @@ def handler(event, context):
     )
     sqs = boto3.client(
         service_name='sqs',
+        region_name=region
+    )
+    sns = boto3.client(
+        service_name='sns',
         region_name=region
     )
     # message = sqs.receive_message(
@@ -83,13 +95,17 @@ def handler(event, context):
             if get_job_response['State'] == 'COMPLETED':
                 print ("Job {} completed".format(job_id))
                 completed_jobs.add(job_id)
+                # publish event in SNS Topic
+                message = create_message(dataset_id,revision_ids[0])
+                sns.publish(TopicArn=topic_arn, Message=message, Subject='ADX New Revision Event')
             if get_job_response['State'] == 'ERROR':
                 job_errors = get_job_response['Errors']
                 raise Exception('JobId: {} failed with errors:\n{}'.format(job_id, job_errors))
             # Sleep to ensure we don't get throttled by the GetJob API.
             time.sleep(0.2)        
-            
+
     return {
         'statusCode': 200,
         'body': json.dumps('All jobs completed.')
     }
+
