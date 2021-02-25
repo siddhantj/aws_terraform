@@ -83,6 +83,7 @@ resource "aws_lambda_function" "FunctionGetNewRevision" {
   timeout = 180
 }
 
+# Attach LambdaBasicExecutionRole AWS Managed Policy to Lambda Execution Role(RoleGetNewRevision)
 resource "aws_iam_role_policy_attachment" "RoleGetNewRevisionAttachment" {
   role       = aws_iam_role.RoleGetNewRevision.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
@@ -127,7 +128,8 @@ resource "aws_iam_role_policy" "RoleGetNewRevisionPolicy" {
           "dataexchange:CreateJob",
           "dataexchange:GetJob",
           "dataexchange:ListRevisionAssets",
-          "dataexchange:GetAsset"
+          "dataexchange:GetAsset",
+          "dataexchange:GetRevision"
         ]
         Resource = "*"
       },
@@ -164,12 +166,6 @@ resource "aws_iam_role_policy" "RoleGetNewRevisionPolicy" {
     ]
   })
 }
-
-# Attach LambdaBasicExecutionRole AWS Managed Policy to Lambda Execution Role(RoleGetNewRevision) ##Test. comment out and see what it does
-# resource "aws_iam_role_policy_attachment" "RoleGetNewRevisionAttachment" {
-#   role       = aws_iam_role.RoleGetNewRevision.name
-#   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
-# }
 
 
 /*
