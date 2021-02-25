@@ -49,6 +49,7 @@ def handler(event, context):
     # message = sqs.receive_message(
     #     QueueUrl='https://sqs.us-east-1.amazonaws.com/635065826439/adx_sqs_queue'
     # )
+    print("Boto3 version: {}".format(boto3.__version__))
     for record in event['Records']: ## check if 'for' of 'if' shall be used
         body = json.loads(record["body"])
         message = json.loads(body['Message'])
@@ -70,13 +71,16 @@ def handler(event, context):
         for assets_chunk in assets_chunks:
             # Create the Job which exports assets to S3.
             export_job = dataexchange.create_job(
-                Type='EXPORT_ASSETS_TO_S3',
+                Type='EXPORT_REVISIONS_TO_S3',
                 Details={
-                    'ExportAssetsToS3': {
+                    'ExportRevisionsToS3': {
                         'DataSetId': dataset_id,
-                        'RevisionId': revision_id,
-                        'AssetDestinations': [
-                            { 'AssetId': asset['Id'], 'Bucket': destination_bucket } for asset in assets_chunk
+            # 'Encryption': {
+            #     'KmsKeyArn': 'string',
+            #     'Type': 'aws:kms'|'AES256'
+            # },
+                        'RevisionDestinations': [
+                            { 'Bucket': destination_bucket, 'RevisionId': revision_id }
                         ]
                     }
                 }    
