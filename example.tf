@@ -42,11 +42,11 @@ resource "aws_s3_bucket_public_access_block" "DataS3BucketPublicAccessBlock" {
   restrict_public_buckets = true
 }
 
-# resource "aws_s3_bucket_object" "adx_s3_folder" {
-#   bucket       = aws_s3_bucket.DataS3Bucket.id
-#   key          = "adx_s3_folder/"
-#   content_type = "application/x-directory"
-# }
+resource "aws_s3_bucket_object" "adx_s3_folder" {
+  bucket       = aws_s3_bucket.DataS3Bucket.id
+  key          = "adx-cpi/"
+  content_type = "application/x-directory"
+}
 
 
 # Create new EventBridge rule to trigger on the Revision Published To Data Set event .This is invocation
@@ -60,13 +60,6 @@ resource "aws_cloudwatch_event_rule" "NewRevisionEventRule" {
   })
 }
 
-# Create trigger for EventBRidge rule to Lambda function .This is triggering target
-# resource "aws_cloudwatch_event_target" "TargetGetNewRevision" { ## comment this out to see if you see any trigget in cloudwatch. I'm unable to see target_id of this trigger in cloudwatch or lambda
-#   rule      = aws_cloudwatch_event_rule.NewRevisionEventRule.name
-#   target_id = "TargetGetNewRevision"
-#   arn       = aws_lambda_function.FunctionGetNewRevision.arn
-# }
-
 # Create Lambda function using Python code included in index.zip
 resource "aws_lambda_function" "FunctionGetNewRevision" {
   function_name    = "FunctionGetNewRevision"
@@ -75,7 +68,9 @@ resource "aws_lambda_function" "FunctionGetNewRevision" {
   handler          = "index.handler"
   environment {
     variables = {
-      S3_BUCKET = aws_s3_bucket.DataS3Bucket.bucket
+      S3_BUCKET          = aws_s3_bucket.DataS3Bucket.bucket
+      INBOUND_SQS_QUEUE  = aws_sqs_queue.adx_sqs_queue.id
+      OUTBOUND_SQS_QUEUE = aws_sqs_queue.adx-s3export-new-revision-event-queue.id
     }
   }
   role    = aws_iam_role.RoleGetNewRevision.arn
@@ -167,59 +162,27 @@ resource "aws_iam_role_policy" "RoleGetNewRevisionPolicy" {
   })
 }
 
-
-/*
 # Invoke Lambda function for initial data export
-data "aws_lambda_invocation" "FistRevision" {
-  function_name = aws_lambda_function.FunctionGetNewRevision.function_name
-  input = jsonencode(
-    {
-      InitialInit = {
-        data_set_id = var.datasetID,
-        RevisionIds = var.revisionID
-      }
-    }
-  )
-}
-*/
-# Create SNS topic resource
-resource "aws_sns_topic" "adx_sns_topic" {
-  name = "adx_sns_topic"
-  # display_name = "adx_sns_topic"
-}
+# data "aws_lambda_invocation" "FirstRevision" {
+#   function_name = aws_lambda_function.FunctionGetNewRevision.function_name
+#   input = jsonencode(
+#     {
+#       InitialInit = {
+#         data_set_id = var.datasetID,
+#         RevisionIds = var.revisionID
+#       }
+#     }
+#   )
+# }
 
-# Create policy for SNS topic
-resource "aws_sns_topic_policy" "adx_sns_topic_policy" {
-  arn    = aws_sns_topic.adx_sns_topic.arn
-  policy = data.aws_iam_policy_document.sns_topic_policy.json
 
-}
-
-data "aws_iam_policy_document" "sns_topic_policy" {
-  policy_id = "__default_policy_ID"
-  statement {
-    actions = [
-      "sns:Publish"
-    ]
-    principals {
-      type        = "Service"
-      identifiers = ["events.amazonaws.com"]
-    }
-    effect = "Allow"
-    resources = [
-      aws_sns_topic.adx_sns_topic.arn,
-    ]
-    sid = "__default_statement_ID"
-  }
-}
-
-# Create SQS Queue "adx_sns_topic"
+# Create SQS Queue "adx_sqs_queue"
 resource "aws_sqs_queue" "adx_sqs_queue" {
-  name                        = "adx_sqs_queue"
-  fifo_queue                  = false
-  content_based_deduplication = false # will be true for FIFO
+  name                        = "adx_sqs_queue.fifo"
+  fifo_queue                  = true
+  content_based_deduplication = true
   max_message_size            = 2048
-  visibility_timeout_seconds  = 600
+  visibility_timeout_seconds  = 240
 }
 
 
@@ -243,18 +206,14 @@ resource "aws_sqs_queue_policy" "adx_sqs_queue_policy" {
 POLICY
 }
 
-# Subscribe "adx_sqs_queue" to topic "adx_sns_topic"
-resource "aws_sns_topic_subscription" "adx_sns_topic_subscribed_by_adx_sqs_queue" {
-  topic_arn = aws_sns_topic.adx_sns_topic.arn
-  protocol  = "sqs"
-  endpoint  = aws_sqs_queue.adx_sqs_queue.arn
-}
-
-# Create trigger for EventBridge/Cloudwatch rule to SNS topic adx_sns_topic .This is triggering target
+# Create trigger for EventBridge/Cloudwatch rule to SQS queue adx_sqs_queue .This is triggering target
 resource "aws_cloudwatch_event_target" "TargetGetNewRevision" {
   rule      = aws_cloudwatch_event_rule.NewRevisionEventRule.name
   target_id = "TargetGetNewRevision"
-  arn       = aws_sns_topic.adx_sns_topic.arn
+  arn       = aws_sqs_queue.adx_sqs_queue.arn
+  sqs_target {
+    message_group_id = var.datasetID
+  }
 }
 
 # Setup SQS Queue Trigger for S3 Export Lambda
@@ -279,43 +238,11 @@ output "caller_user" {
   value = data.aws_caller_identity.current.user_id
 }
 
-
-# Create SNS topic for AS consumption
-resource "aws_sns_topic" "adx-s3export-new-revision-event-topic" {
-  name = "adx-s3export-new-revision-event-topic"
-
-}
-
-# Attach policy 'adx-s3export-new-revision-event-topic-policy' to SNS topic 'adx-s3export-new-revision-event-topic'
-resource "aws_sns_topic_policy" "adx-s3export-new-revision-event-topic-policy" {
-  arn    = aws_sns_topic.adx-s3export-new-revision-event-topic.arn
-  policy = data.aws_iam_policy_document.sns_s3export_topic_policy.json
-
-}
-
-data "aws_iam_policy_document" "sns_s3export_topic_policy" {
-  policy_id = "__default_policy_ID"
-  statement {
-    actions = [
-      "sns:Publish"
-    ]
-    principals {
-      type        = "Service"
-      identifiers = ["lambda.amazonaws.com"]
-    }
-    effect = "Allow"
-    resources = [
-      aws_sns_topic.adx-s3export-new-revision-event-topic.arn,
-    ]
-    sid = "__default_statement_ID"
-  }
-}
-
 # Create SQS Queue 'adx-s3export-new-revision-event-queue'
 resource "aws_sqs_queue" "adx-s3export-new-revision-event-queue" {
-  name                        = "adx-s3export-new-revision-event-queue"
-  fifo_queue                  = false
-  content_based_deduplication = false # will be true for FIFO
+  name                        = "adx-s3export-new-revision-event-queue.fifo"
+  fifo_queue                  = true
+  content_based_deduplication = true
   max_message_size            = 2048
   visibility_timeout_seconds  = 600
 }
@@ -340,9 +267,10 @@ resource "aws_sqs_queue_policy" "adx-s3export-new-revision-event-queue-policy" {
 POLICY
 }
 
-# Subscribe "adx-s3export-new-revision-event-queue" to topic "adx-s3export-new-revision-event-topic"
-resource "aws_sns_topic_subscription" "adx-s3export-new-revision-event-queue-subscribed-to-adx-s3export-new-revision-event-topic" {
-  topic_arn = aws_sns_topic.adx-s3export-new-revision-event-topic.arn
-  protocol  = "sqs"
-  endpoint  = aws_sqs_queue.adx-s3export-new-revision-event-queue.arn
+# Add lambda layer for boto3 1.7.14
+resource "aws_lambda_layer_version" "lambda_layer" {
+  filename   = "boto3.zip"
+  layer_name = "boto3"
+
+  compatible_runtimes = ["python3.7"]
 }
