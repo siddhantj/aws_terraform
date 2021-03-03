@@ -266,11 +266,3 @@ resource "aws_sqs_queue_policy" "adx-s3export-new-revision-event-queue-policy" {
 }
 POLICY
 }
-
-# Add lambda layer for boto3 1.7.14
-resource "aws_lambda_layer_version" "lambda_layer" {
-  filename   = "boto3.zip"
-  layer_name = "boto3"
-
-  compatible_runtimes = ["python3.7"]
-}
