@@ -2,10 +2,10 @@ import os
 os.environ['AWS_DATA_PATH'] = '/opt/'
 
 from itertools import islice
-import boto3
 from datetime import datetime
 import time
 import json
+import boto3
 
 region = os.environ['AWS_REGION']
 destination_bucket = os.environ['S3_BUCKET']
@@ -13,8 +13,8 @@ inbound_sqs_queue = os.environ['INBOUND_SQS_QUEUE']
 outbound_sqs_queue = os.environ['OUTBOUND_SQS_QUEUE']
 destination_folder = "adx-cpi/"
 
-print("Region: {}".format(region))
-print("destination_folder: {}".format(destination_folder))
+# print("Region: {}".format(region))
+# print("destination_folder: {}".format(destination_folder))
 
 dataexchange = boto3.client(
     service_name='dataexchange',
@@ -24,22 +24,34 @@ s3 = boto3.client(
     service_name='s3',
     region_name=region
 )
-sqs = boto3.client(
+
+session = boto3.Session()
+
+sqs = session.client(
     service_name='sqs',
-    region_name=region
+    endpoint_url='https://sqs.us-east-1.amazonaws.com',
 )
 
 if not destination_bucket and not inbound_sqs_queue and not outbound_sqs_queue:
     raise Exception("Environment variables. 'S3_BUCKET': {}, 'INBOUND_SQS_QUEUE': {}, 'OUTBOUND_SQS_QUEUE': {}".format(destination_bucket, inbound_sqs_queue, outbound_sqs_queue))
 
 def create_message(dataset_id, revision_id):
-    # assets = dataexchange.list_revision_assets(DataSetId=dataset_id, RevisionId=revision_id)
-    # print('Assets: {}'.format(assets))
-    message = {
-        'dataset_id' : dataset_id,
-        'revision_id': revision_id,
-        "location": "adx-cpi/" + dataset_id + "/" + revision_id
-    }
+    table_name = "world_bank_cpi"
+    table_assetlist = {}
+    assets_details = dataexchange.list_revision_assets(DataSetId=dataset_id, RevisionId=revision_id)
+    assets = assets_details['Assets']
+    print('Assets: {}'.format(assets_details))
+    for asset in assets:
+        asset_name = asset['Name']
+        print("Name: {}".format( asset_name))
+        if table_name not in table_assetlist:
+            table_assetlist[table_name] =[]
+        table_assetlist[table_name].append("adx-cpi/" + dataset_id + "/" + revision_id + "/" + asset_name)    
+    
+    message = {}
+    message['dataset_id'] = dataset_id
+    message['revision_id'] = revision_id
+    message.update(table_assetlist)
     return json.dumps(message)
 
 def handler(event, context):
@@ -116,4 +128,3 @@ def handler(event, context):
         'statusCode': 200,
         'body': json.dumps('All jobs completed.')
     }
-
