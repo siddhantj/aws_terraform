@@ -46,12 +46,16 @@ def create_message(dataset_id, revision_id):
         print("Name: {}".format( asset_name))
         if table_name not in table_assetlist:
             table_assetlist[table_name] =[]
-        table_assetlist[table_name].append("adx-cpi/" + dataset_id + "/" + revision_id + "/" + asset_name)    
+        asset_s3_info = {}
+        asset_s3_info['bucket'] = destination_bucket
+        asset_s3_info['key'] = "adx-cpi/" + dataset_id + "/" + revision_id + "/" + asset_name
+        asset_s3_info['version'] = None
+        table_assetlist[table_name].append(asset_s3_info)    
     
     message = {}
     message['dataset_id'] = dataset_id
     message['revision_id'] = revision_id
-    message.update(table_assetlist)
+    message['dataFilesMap'] = table_assetlist
     return json.dumps(message)
 
 def handler(event, context):
